@@ -66,6 +66,50 @@ APPLIANCE_CONSUMPTION_DEFAULT_DATA = {
     "seasonalEfficiencyElectric": 0.0,
 }
 
+CONSUMPTION_FIELDS = (
+    "heatingEnergyConsumed",
+    "hotWaterEnergyConsumed",
+    "coolingEnergyConsumed",
+    "heatingEnergyDelivered",
+    "hotWaterEnergyDelivered",
+    "coolingEnergyDelivered",
+)
+
+
+def _consumption_periods(now: datetime):
+    """Return the (name, granularity, start, end) of the current month and year."""
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(seconds=1)
+
+    year_start = month_start.replace(month=1)
+    year_end = year_start.replace(year=year_start.year + 1) - timedelta(seconds=1)
+
+    return (
+        ("Monthly", "monthly", month_start, month_end),
+        ("Yearly", "yearly", year_start, year_end),
+    )
+
+
+def _consumption_totals(row):
+    """Turn a consumption row into sensor values, including the derived COP.
+
+    Everything is None when the period has no reported data, so that the energy
+    sensors go unknown instead of dropping to zero. A zero would look like a
+    meter reset to the statistics engine and corrupt long term history.
+    """
+    if row is None:
+        return {field: None for field in CONSUMPTION_FIELDS} | {"cop": None}
+
+    totals = {field: row.get(field) for field in CONSUMPTION_FIELDS}
+
+    consumed = sum(totals[f] or 0 for f in CONSUMPTION_FIELDS if f.endswith("Consumed"))
+    delivered = sum(
+        totals[f] or 0 for f in CONSUMPTION_FIELDS if f.endswith("Delivered")
+    )
+    totals["cop"] = round(delivered / consumed, 2) if consumed > 0 else None
+
+    return totals
+
 
 class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
     """Remeha Home update coordinator."""
@@ -83,6 +127,7 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
         self.device_info = {}
         self.technical_info = {}
         self.appliance_consumption_data = {}
+        self.appliance_period_consumption_data = {}
         self.appliance_last_consumption_data_update = {}
         self.dhw_activity_cache = {}
         self.heating_curve_data: dict[str, dict] = {}
@@ -190,6 +235,31 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                                 f"seasonalEfficiency{producer["energyType"]}"
                             ] = producer.get("seasonalEfficiency", 0.0)
 
+                    for (
+                        period,
+                        granularity,
+                        start,
+                        end,
+                    ) in _consumption_periods(now):
+                        period_data = await self.api.async_get_consumption_data(
+                            appliance_id, granularity, start, end
+                        )
+                        _LOGGER.debug(
+                            "Requested %s consumption data for appliance %s: %s",
+                            granularity,
+                            appliance_id,
+                            period_data,
+                        )
+
+                        reported = [
+                            row
+                            for row in period_data["data"]
+                            if row.get("isDataReported")
+                        ]
+                        self.appliance_period_consumption_data.setdefault(
+                            appliance_id, {}
+                        )[period] = reported[-1] if reported else None
+
                     self.appliance_last_consumption_data_update[appliance_id] = now
                 except ClientResponseError as err:
                     _LOGGER.warning(
@@ -205,6 +275,12 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                 ]
             else:
                 appliance["consumptionData"] = APPLIANCE_CONSUMPTION_DEFAULT_DATA
+
+            period_data = self.appliance_period_consumption_data.get(appliance_id, {})
+            for period, _granularity, _start, _end in _consumption_periods(now):
+                appliance[f"consumptionData{period}"] = _consumption_totals(
+                    period_data.get(period)
+                )
 
             self.device_info[appliance_id] = DeviceInfo(
                 identifiers={(DOMAIN, appliance_id)},

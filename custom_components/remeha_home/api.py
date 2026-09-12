@@ -182,6 +182,31 @@ class RemehaHomeAPI:
         _LOGGER.debug(json)
         return json
 
+    async def async_get_consumption_data(
+        self,
+        appliance_id: str,
+        granularity: str,
+        start: datetime.datetime,
+        end: datetime.datetime,
+    ) -> dict:
+        """Get energy consumption data for an appliance over a period.
+
+        The granularity is one of daily, monthly or yearly. The API returns one
+        row per period within the requested range, each holding the total for
+        that period rather than a running total.
+        """
+        start_string = start.strftime("%Y-%m-%d %H:%M:%S.%fZ")
+        end_string = end.strftime("%Y-%m-%d %H:%M:%S.%fZ")
+
+        response = await self._async_api_request(
+            "GET",
+            f"/appliances/{appliance_id}/energyconsumption/{granularity}?startDate={start_string}&endDate={end_string}",
+        )
+        response.raise_for_status()
+        json = await response.json()
+        _LOGGER.debug(json)
+        return json
+
     async def async_get_consumption_data_for_today(self, appliance_id: str) -> dict:
         """Get technical information for an appliance."""
         today = datetime.datetime.now().replace(
@@ -189,17 +214,9 @@ class RemehaHomeAPI:
         )
         end_of_today = today + datetime.timedelta(hours=23, minutes=59, seconds=59)
 
-        today_string = today.strftime("%Y-%m-%d %H:%M:%S.%fZ")
-        end_of_today_string = end_of_today.strftime("%Y-%m-%d %H:%M:%S.%fZ")
-
-        response = await self._async_api_request(
-            "GET",
-            f"/appliances/{appliance_id}/energyconsumption/daily?startDate={today_string}&endDate={end_of_today_string}",
+        return await self.async_get_consumption_data(
+            appliance_id, "daily", today, end_of_today
         )
-        response.raise_for_status()
-        json = await response.json()
-        _LOGGER.debug(json)
-        return json
 
     async def async_set_dhw_comfort_setpoint(
         self, hot_water_zone_id: str, setpoint: float

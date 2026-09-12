@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    APPLIANCE_BINARY_SENSOR_TYPES,
     CLIMATE_ZONE_BINARY_SENSOR_TYPES,
     HOT_WATER_ZONE_BINARY_SENSOR_TYPES,
 )
@@ -33,6 +34,20 @@ async def async_setup_entry(
 
     entities = []
     for appliance in coordinator.data["appliances"]:
+        appliance_id = appliance["applianceId"]
+        for (
+            entity_description,
+            transform_func,
+        ) in APPLIANCE_BINARY_SENSOR_TYPES:
+            entities.append(
+                RemehaHomeBinarySensor(
+                    coordinator,
+                    appliance_id,
+                    entity_description,
+                    transform_func,
+                )
+            )
+
         for climate_zone in appliance["climateZones"]:
             climate_zone_id = climate_zone["climateZoneId"]
             for (
@@ -91,11 +106,18 @@ class RemehaHomeBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return self.coordinator.get_by_id(self.item_id)
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self) -> bool | None:
         """Return the measurement value for this sensor."""
         data = self._data
         for part in self.entity_description.key.split("."):
+            # If the key is missing for some reason, don't crash, instead return None
+            if not isinstance(data, dict) or part not in data:
+                _LOGGER.debug("Key not found in data: %s", self.entity_description.key)
+                return None
             data = data[part]
+
+        if data is None:
+            return None
 
         return self.transform_func(data)
 

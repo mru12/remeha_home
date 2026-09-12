@@ -9,7 +9,13 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
     BinarySensorDeviceClass,
 )
-from homeassistant.const import UnitOfEnergy, UnitOfTemperature, UnitOfPressure, UnitOfVolume
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfEnergy,
+    UnitOfTemperature,
+    UnitOfPressure,
+    UnitOfVolume,
+)
 
 DOMAIN = "remeha_home"
 
@@ -223,6 +229,86 @@ APPLIANCE_SENSOR_TYPES = [
         native_unit_of_measurement=None,
         state_class=SensorStateClass.MEASUREMENT,
     ),
+    SensorEntityDescription(
+        key="applianceConnectionStatus",
+        name="Connection Status",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="errorStatus",
+        name="Error Status",
+    ),
+    SensorEntityDescription(
+        key="operatingMode",
+        name="Operating Mode",
+    ),
+    SensorEntityDescription(
+        key="seasonalMode",
+        name="Seasonal Mode",
+    ),
+    SensorEntityDescription(
+        key="outdoorTemperatureInformation.internetOutdoorTemperature",
+        name="Internet Outdoor Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="outdoorTemperatureInformation.weatherCode",
+        name="Weather",
+    ),
+    SensorEntityDescription(
+        key="outdoorTemperatureInformation.outdoorTemperatureSource",
+        name="Outdoor Temperature Source",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="outdoorTemperatureInformation.cloudOutdoorTemperatureStatus",
+        name="Cloud Outdoor Temperature Status",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="holidaySchedule.startTime",
+        name="Holiday Start",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+    SensorEntityDescription(
+        key="holidaySchedule.endTime",
+        name="Holiday End",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+]
+
+# Monthly and yearly energy totals. The API reports these as per-period sums
+# that restart at zero when a new period begins.
+APPLIANCE_SENSOR_TYPES += [
+    SensorEntityDescription(
+        key=f"consumptionData{period}.{field}",
+        name=f"{label} {period}",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    )
+    for period in ("Monthly", "Yearly")
+    for field, label in (
+        ("heatingEnergyConsumed", "Heating Energy Consumed"),
+        ("hotWaterEnergyConsumed", "Hot Water Energy Consumed"),
+        ("coolingEnergyConsumed", "Cooling Energy Consumed"),
+        ("heatingEnergyDelivered", "Heating Energy Delivered"),
+        ("hotWaterEnergyDelivered", "Hot Water Energy Delivered"),
+        ("coolingEnergyDelivered", "Cooling Energy Delivered"),
+    )
+]
+
+APPLIANCE_SENSOR_TYPES += [
+    SensorEntityDescription(
+        key=f"consumptionData{period}.cop",
+        name=f"COP {period}",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+    )
+    for period in ("Monthly", "Yearly")
 ]
 
 ELECTRIC_PRODUCER_SENSOR_TYPES = [
@@ -316,6 +402,16 @@ CLIMATE_ZONE_SENSOR_TYPES = [
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
     ),
+    SensorEntityDescription(
+        key="controlStrategy",
+        name="Control Strategy",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="temporaryOverride.endTime",
+        name="Temporary Override End",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
 ]
 
 HOT_WATER_ZONE_SENSOR_TYPES = [
@@ -340,6 +436,75 @@ HOT_WATER_ZONE_SENSOR_TYPES = [
         name="Next Setpoint Time",
         device_class=SensorDeviceClass.TIMESTAMP,
     ),
+    SensorEntityDescription(
+        key="dhwZoneMode",
+        name="Zone Mode",
+    ),
+    SensorEntityDescription(
+        key="targetSetpoint",
+        name="Target Setpoint",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    SensorEntityDescription(
+        key="setPointMin",
+        name="Setpoint Min",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="setPointMax",
+        name="Setpoint Max",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="nextSwitchActivity",
+        name="Next Switch Activity",
+    ),
+    SensorEntityDescription(
+        key="boostModeEndTime",
+        name="Boost Mode End",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+]
+
+APPLIANCE_BINARY_SENSOR_TYPES = [
+    (
+        BinarySensorEntityDescription(
+            key="applianceOnline",
+            name="Online",
+            device_class=BinarySensorDeviceClass.CONNECTIVITY,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+        lambda value: bool(value),
+    ),
+    (
+        BinarySensorEntityDescription(
+            key="waterPressureOK",
+            name="Water Pressure Problem",
+            device_class=BinarySensorDeviceClass.PROBLEM,
+        ),
+        # The API reports pressure being OK, which is the inverse of a problem.
+        lambda value: not value,
+    ),
+    (
+        BinarySensorEntityDescription(
+            key="holidaySchedule.active",
+            name="Holiday Mode",
+        ),
+        lambda value: bool(value),
+    ),
+    (
+        BinarySensorEntityDescription(
+            key="outdoorTemperatureInformation.isDayTime",
+            name="Daytime",
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+        lambda value: bool(value),
+    ),
 ]
 
 CLIMATE_ZONE_BINARY_SENSOR_TYPES = [
@@ -352,7 +517,23 @@ CLIMATE_ZONE_BINARY_SENSOR_TYPES = [
         ),
         lambda value: value
         in ["ProducingHeat", "RequestingHeat", "ProducingCold", "RequestingCold"],
-    )
+    ),
+    (
+        BinarySensorEntityDescription(
+            key="preHeat.active",
+            name="Pre-heat Active",
+            device_class=BinarySensorDeviceClass.HEAT,
+        ),
+        lambda value: bool(value),
+    ),
+    (
+        BinarySensorEntityDescription(
+            key="preHeat.enabled",
+            name="Pre-heat Enabled",
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+        lambda value: bool(value),
+    ),
 ]
 
 HOT_WATER_ZONE_BINARY_SENSOR_TYPES = [
@@ -364,5 +545,21 @@ HOT_WATER_ZONE_BINARY_SENSOR_TYPES = [
             device_class=BinarySensorDeviceClass.HEAT,
         ),
         lambda value: value == "ProducingHeat",
+    ),
+    (
+        BinarySensorEntityDescription(
+            key="antiLegionellaEnabled",
+            name="Anti-legionella Enabled",
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+        lambda value: bool(value),
+    ),
+    (
+        BinarySensorEntityDescription(
+            key="optimizationEnabled",
+            name="Optimization Enabled",
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+        lambda value: bool(value),
     ),
 ]

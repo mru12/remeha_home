@@ -112,9 +112,15 @@ class RemehaHomeSensor(CoordinatorEntity, SensorEntity):
         value = data
 
         if self.entity_description.device_class == SensorDeviceClass.TIMESTAMP:
-            return dt_util.parse_datetime(value).replace(
-                tzinfo=dt_util.DEFAULT_TIME_ZONE
-            )
+            if value is None:
+                return None
+
+            parsed = dt_util.parse_datetime(value)
+            # Optional times are reported as a 0001-01-01 sentinel when unset.
+            if parsed is None or parsed.year < 2000:
+                return None
+
+            return parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
 
         return value
 
