@@ -1,4 +1,14 @@
 # Remeha Home integration for Home Assistant
+
+> **Maintained fork.** This is a fork of [msvisser/remeha_home](https://github.com/msvisser/remeha_home),
+> which has had no maintainer activity since July 2025. It builds on the community consolidation in
+> [hugo-leij/remeha_home](https://github.com/hugo-leij/remeha_home) (upstream PR #122: DHW control, heat pump
+> support, heating curve, activity temperatures, producer statistics) and adds appliance online detection,
+> monthly/yearly energy totals with COP, and fixes for heat pumps migrated from the legacy backend.
+>
+> Install it in HACS as a custom repository: `https://github.com/mru12/remeha_home`, category *Integration*.
+> If the original `msvisser/remeha_home` is installed through HACS, remove it from HACS first (keep the
+> integration's config entry), otherwise a HACS update will overwrite this version.
 This integration lets you control your Remeha Home thermostats from Home Assistant.
 
 **Before using this integration, make sure you have set up your thermostat in the [Remeha Home](https://play.google.com/store/apps/details?id=com.bdrthermea.application.remeha) app.**
@@ -32,7 +42,7 @@ You can simply log in using the credentials that you would use in the respective
 ## Installation
 
 ### Install with HACS (recommended)
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=msvisser&repository=remeha_home&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=mru12&repository=remeha_home&category=integration)
 
 Do you have [HACS](https://hacs.xyz/) installed?
 Click the button or follow the instructions.
