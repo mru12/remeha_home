@@ -161,13 +161,22 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         return None
 
     def _get_appliance_type(self) -> str:
-        """Get the appliance type for this climate zone."""
+        """Get the HVAC mode profile for this climate zone.
+
+        Only heat pumps that can actually cool use the HeatPump profile (manual
+        mode exposed as heat_cool). A heating-only heat pump reports
+        capabilityCooling false and behaves like a boiler: manual mode is heat.
+        """
         appliance_data = self._get_appliance_data()
-        return (
-            appliance_data.get("applianceType", "Boiler")
-            if appliance_data
-            else "Boiler"
-        )
+        if not appliance_data:
+            return "Boiler"
+        if appliance_data.get("applianceType") != "HeatPump":
+            return "Boiler"
+        if self._data.get("capabilityCooling") or appliance_data.get(
+            "capabilityCooling"
+        ):
+            return "HeatPump"
+        return "Boiler"
 
     @property
     def current_temperature(self) -> float | None:
@@ -199,8 +208,8 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         hvac_mode = get_remeha_mode_to_hvac_mode(appliance_type).get(mode)
 
         # Enhanced debugging for cooling functionality
-        _LOGGER.info(
-            "🔧 COOLING DEBUG - Zone %s: zoneMode=%s, appliance_type=%s, mapped_hvac_mode=%s",
+        _LOGGER.debug(
+            "Zone %s: zoneMode=%s, mode_profile=%s, mapped_hvac_mode=%s",
             self.climate_zone_id,
             mode,
             appliance_type,

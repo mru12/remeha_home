@@ -40,30 +40,33 @@ PRODUCER_STATS = [
     "energyProductionTotal",
 ]
 
+# Used when the cloud has no reported data (e.g. the gateway is offline). The
+# values are None so the energy sensors go unknown; a 0.0 would look like a
+# meter reset to the statistics engine and double count once data returns.
 APPLIANCE_CONSUMPTION_DEFAULT_DATA = {
-    "heatingEnergyConsumed": 0.0,
-    "hotWaterEnergyConsumed": 0.0,
-    "coolingEnergyConsumed": 0.0,
-    "heatingEnergyDelivered": 0.0,
-    "hotWaterEnergyDelivered": 0.0,
-    "coolingEnergyDelivered": 0.0,
-    "energyConsumptionCHElectric": 0.0,
-    "energyConsumptionDHWElectric": 0.0,
-    "energyConsumptionCoolingElectric": 0.0,
-    "energyConsumptionTotalElectric": 0.0,
-    "energyProductionCHElectric": 0.0,
-    "energyProductionDHWElectric": 0.0,
-    "energyProductionCoolingElectric": 0.0,
-    "energyProductionTotalElectric": 0.0,
-    "energyConsumptionCHNaturalGas": 0.0,
-    "energyConsumptionDHWNaturalGas": 0.0,
-    "energyConsumptionCoolingNaturalGas": 0.0,
-    "energyConsumptionTotalNaturalGas": 0.0,
-    "energyProductionCHNaturalGas": 0.0,
-    "energyProductionDHWNaturalGas": 0.0,
-    "energyProductionCoolingNaturalGas": 0.0,
-    "energyProductionTotalNaturalGas": 0.0,
-    "seasonalEfficiencyElectric": 0.0,
+    "heatingEnergyConsumed": None,
+    "hotWaterEnergyConsumed": None,
+    "coolingEnergyConsumed": None,
+    "heatingEnergyDelivered": None,
+    "hotWaterEnergyDelivered": None,
+    "coolingEnergyDelivered": None,
+    "energyConsumptionCHElectric": None,
+    "energyConsumptionDHWElectric": None,
+    "energyConsumptionCoolingElectric": None,
+    "energyConsumptionTotalElectric": None,
+    "energyProductionCHElectric": None,
+    "energyProductionDHWElectric": None,
+    "energyProductionCoolingElectric": None,
+    "energyProductionTotalElectric": None,
+    "energyConsumptionCHNaturalGas": None,
+    "energyConsumptionDHWNaturalGas": None,
+    "energyConsumptionCoolingNaturalGas": None,
+    "energyConsumptionTotalNaturalGas": None,
+    "energyProductionCHNaturalGas": None,
+    "energyProductionDHWNaturalGas": None,
+    "energyProductionCoolingNaturalGas": None,
+    "energyProductionTotalNaturalGas": None,
+    "seasonalEfficiencyElectric": None,
 }
 
 CONSUMPTION_FIELDS = (
@@ -74,6 +77,21 @@ CONSUMPTION_FIELDS = (
     "hotWaterEnergyDelivered",
     "coolingEnergyDelivered",
 )
+
+
+def _producer_energy_type(producer: dict, appliance: dict) -> str | None:
+    """Return the producer energy type, inferring it for legacy-migrated units.
+
+    Units migrated from the legacy backend report energyType null. Without a
+    fallback the stats were stored as e.g. energyConsumptionCHNone and every
+    per-energy-type sensor stayed unknown. A heat pump only consumes electricity.
+    """
+    energy_type = producer.get("energyType")
+    if energy_type:
+        return energy_type
+    if appliance.get("applianceType") == "HeatPump":
+        return "Electric"
+    return None
 
 
 def _consumption_periods(now: datetime):
@@ -190,9 +208,15 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                         consumption_data,
                     )
 
-                    if len(consumption_data["data"]) > 0:
-                        if consumption_data["data"][0]["producerPerformanceStatistics"]["producers"]:
-                            for producer in consumption_data["data"][0]["producerPerformanceStatistics"]["producers"]:
+                    reported_today = [
+                        row
+                        for row in consumption_data["data"]
+                        if row.get("isDataReported", True)
+                    ]
+                    if reported_today:
+                        today_row = reported_today[-1]
+                        if today_row.get("producerPerformanceStatistics", {}).get("producers"):
+                            for producer in today_row["producerPerformanceStatistics"]["producers"]:
                                 if producer["energyType"] == "NaturalGas":
                                     """Recalculate energy values back to gas values when Gas device"""
 
@@ -200,14 +224,12 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                                     producer["energyConsumptionDHW"] = round(float(producer["energyConsumptionDHW"]) / float(appliance["gasCalorificValue"]),2)
 
 
-                        self.appliance_consumption_data[appliance_id] = (
-                            consumption_data["data"][0]
-                        )
+                        self.appliance_consumption_data[appliance_id] = today_row
                     else:
                         _LOGGER.warning(
                             "No consumption data found for appliance %s", appliance_id
                         )
-                        self.appliance_consumption_data[appliance_id] = (
+                        self.appliance_consumption_data[appliance_id] = dict(
                             APPLIANCE_CONSUMPTION_DEFAULT_DATA
                         )
 
@@ -218,8 +240,11 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                         for producer in self.appliance_consumption_data[appliance_id][
                             "producerPerformanceStatistics"
                         ]["producers"]:
+                            energy_type = _producer_energy_type(producer, appliance)
+                            if energy_type is None:
+                                continue
                             for producer_stat in PRODUCER_STATS:
-                                stat = f"{producer_stat}{producer["energyType"]}"
+                                stat = f"{producer_stat}{energy_type}"
                                 value = producer.get(producer_stat, 0.0)
                                 if not isinstance(value, int | float):
                                     value = 0.0
@@ -232,8 +257,8 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                                 )
 
                             self.appliance_consumption_data[appliance_id][
-                                f"seasonalEfficiency{producer["energyType"]}"
-                            ] = producer.get("seasonalEfficiency", 0.0)
+                                f"seasonalEfficiency{energy_type}"
+                            ] = producer.get("seasonalEfficiency")
 
                     for (
                         period,
@@ -352,6 +377,11 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                             climate_zone_id,
                             err,
                         )
+
+                heating_curve = self.heating_curve_data.get(climate_zone_id) or {}
+                climate_zone["maxFlowTemperature"] = heating_curve.get(
+                    "maxFlowTemperature"
+                )
 
                 self.device_info[climate_zone_id] = DeviceInfo(
                     identifiers={(DOMAIN, climate_zone_id)},

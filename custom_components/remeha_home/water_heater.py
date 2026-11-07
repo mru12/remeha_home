@@ -172,13 +172,23 @@ class RemehaHomeWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         """Return additional attributes for diagnostics."""
         attributes = {
             "dhw_status": self._data.get("dhwStatus"),
-            "boost_mode_end_time": self._data.get("boostModeEndTime"),
+            "boost_mode_end_time": self._boost_mode_end_time(),
             "heating_state": self._heating_state(),
         }
         remaining = self._remaining_boost_minutes()
         if remaining is not None:
             attributes["remaining_boost_time"] = f"{remaining} minutes"
         return attributes
+
+    def _boost_mode_end_time(self) -> str | None:
+        """Return the boost end time, or None for the API's 0001-01-01 sentinel."""
+        end_time = self._data.get("boostModeEndTime")
+        if not end_time:
+            return None
+        parsed = dt_util.parse_datetime(end_time)
+        if parsed is None or parsed.year < 2000:
+            return None
+        return end_time
 
     def _remaining_boost_minutes(self) -> int | None:
         """Return the remaining boost time in minutes, or None when not boosting."""

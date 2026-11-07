@@ -235,6 +235,11 @@ APPLIANCE_SENSOR_TYPES = [
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     SensorEntityDescription(
+        key="pairingStatus",
+        name="Pairing Status",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
         key="errorStatus",
         name="Error Status",
     ),
@@ -412,6 +417,13 @@ CLIMATE_ZONE_SENSOR_TYPES = [
         name="Temporary Override End",
         device_class=SensorDeviceClass.TIMESTAMP,
     ),
+    SensorEntityDescription(
+        key="maxFlowTemperature",
+        name="Max Flow Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 ]
 
 HOT_WATER_ZONE_SENSOR_TYPES = [
@@ -468,6 +480,15 @@ HOT_WATER_ZONE_SENSOR_TYPES = [
         key="boostModeEndTime",
         name="Boost Mode End",
         device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+    SensorEntityDescription(
+        key="activeDwhTimeProgramNumber",
+        name="Time Program",
+    ),
+    SensorEntityDescription(
+        key="boostDuration",
+        name="Boost Duration",
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
 ]
 
