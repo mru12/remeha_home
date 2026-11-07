@@ -430,8 +430,15 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
         return self.items.get(item_id)
 
     def get_device_info(self, item_id: str):
-        """Return device info for the item with the specified id."""
-        return self.device_info.get(item_id)
+        """Return the device reference for an entity.
+
+        Only the identifiers are returned: the devices themselves (including the
+        via_device_id link to the appliance) are registered in async_setup_entry.
+        """
+        device_info = self.device_info.get(item_id)
+        if device_info is None:
+            return None
+        return DeviceInfo(identifiers=device_info["identifiers"])
 
     def get_heating_curve(self, climate_zone_id: str) -> dict | None:
         """Return heating curve data for the specified climate zone."""

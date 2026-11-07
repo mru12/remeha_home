@@ -54,15 +54,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         "coordinator": coordinator,
     }
 
-    # Pre-register appliance devices so child devices can reference them via via_device
-    registry = dr.async_get(hass)
-    for device_info in coordinator.device_info.values():
-        if "via_device" not in device_info:
-            registry.async_get_or_create(config_entry_id=entry.entry_id, **device_info)
+    # Register all devices up front: parents first, then children linked by
+    # via_device_id. Entities only reference their device by identifiers, because
+    # passing via_device through entity device_info is deprecated (an error when
+    # entities are re-added at runtime, e.g. after an entity_id rename, and
+    # removed in HA 2027.8).
+    async_register_devices(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
+
+
+def async_register_devices(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: RemehaHomeUpdateCoordinator
+) -> None:
+    """Create or update the device registry entries for all coordinator devices."""
+    registry = dr.async_get(hass)
+    device_infos = coordinator.device_info.values()
+
+    for device_info in device_infos:
+        if "via_device" not in device_info:
+            registry.async_get_or_create(config_entry_id=entry.entry_id, **device_info)
+
+    for device_info in device_infos:
+        if "via_device" not in device_info:
+            continue
+        info = dict(device_info)
+        parent = registry.async_get_device(identifiers={info.pop("via_device")})
+        kwargs = {"via_device_id": parent.id} if parent else {}
+        registry.async_get_or_create(config_entry_id=entry.entry_id, **info, **kwargs)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
