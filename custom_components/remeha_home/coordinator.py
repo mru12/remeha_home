@@ -196,102 +196,7 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                 now - self.appliance_last_consumption_data_update[appliance_id]
                 >= timedelta(minutes=14, seconds=45)
             ):
-                try:
-                    consumption_data = (
-                        await self.api.async_get_consumption_data_for_today(
-                            appliance_id
-                        )
-                    )
-                    _LOGGER.debug(
-                        "Requested consumption data for appliance %s: %s",
-                        appliance_id,
-                        consumption_data,
-                    )
-
-                    reported_today = [
-                        row
-                        for row in consumption_data["data"]
-                        if row.get("isDataReported", True)
-                    ]
-                    if reported_today:
-                        today_row = reported_today[-1]
-                        if today_row.get("producerPerformanceStatistics", {}).get("producers"):
-                            for producer in today_row["producerPerformanceStatistics"]["producers"]:
-                                if producer["energyType"] == "NaturalGas":
-                                    """Recalculate energy values back to gas values when Gas device"""
-
-                                    producer["energyConsumptionCH"] = round(float(producer["energyConsumptionCH"]) / float(appliance["gasCalorificValue"]),2)
-                                    producer["energyConsumptionDHW"] = round(float(producer["energyConsumptionDHW"]) / float(appliance["gasCalorificValue"]),2)
-
-
-                        self.appliance_consumption_data[appliance_id] = today_row
-                    else:
-                        _LOGGER.warning(
-                            "No consumption data found for appliance %s", appliance_id
-                        )
-                        self.appliance_consumption_data[appliance_id] = dict(
-                            APPLIANCE_CONSUMPTION_DEFAULT_DATA
-                        )
-
-                    if (
-                        "producerPerformanceStatistics"
-                        in self.appliance_consumption_data[appliance_id]
-                    ):
-                        for producer in self.appliance_consumption_data[appliance_id][
-                            "producerPerformanceStatistics"
-                        ]["producers"]:
-                            energy_type = _producer_energy_type(producer, appliance)
-                            if energy_type is None:
-                                continue
-                            for producer_stat in PRODUCER_STATS:
-                                stat = f"{producer_stat}{energy_type}"
-                                value = producer.get(producer_stat, 0.0)
-                                if not isinstance(value, int | float):
-                                    value = 0.0
-
-                                self.appliance_consumption_data[appliance_id][stat] = (
-                                    self.appliance_consumption_data[appliance_id].get(
-                                        stat, 0.0
-                                    )
-                                    + value
-                                )
-
-                            self.appliance_consumption_data[appliance_id][
-                                f"seasonalEfficiency{energy_type}"
-                            ] = producer.get("seasonalEfficiency")
-
-                    for (
-                        period,
-                        granularity,
-                        start,
-                        end,
-                    ) in _consumption_periods(now):
-                        period_data = await self.api.async_get_consumption_data(
-                            appliance_id, granularity, start, end
-                        )
-                        _LOGGER.debug(
-                            "Requested %s consumption data for appliance %s: %s",
-                            granularity,
-                            appliance_id,
-                            period_data,
-                        )
-
-                        reported = [
-                            row
-                            for row in period_data["data"]
-                            if row.get("isDataReported")
-                        ]
-                        self.appliance_period_consumption_data.setdefault(
-                            appliance_id, {}
-                        )[period] = reported[-1] if reported else None
-
-                    self.appliance_last_consumption_data_update[appliance_id] = now
-                except ClientResponseError as err:
-                    _LOGGER.warning(
-                        "Failed to request consumption data for appliance %s: %s",
-                        appliance_id,
-                        err,
-                    )
+                await self._async_update_consumption(appliance, now)
 
             # Get the cached consumption data for the appliance or use default values
             if appliance_id in self.appliance_consumption_data:
@@ -411,7 +316,7 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
             producer_stats = appliance["consumptionData"].get("producerPerformanceStatistics")
             if producer_stats and len(producer_stats["producers"]) > 1:
                 for producer in producer_stats["producers"]:
-                    producer_id = "{0}_{1}".format(appliance_id, producer["instanceWithinDevice"])
+                    producer_id = "{}_{}".format(appliance_id, producer["instanceWithinDevice"])
                     self.items[producer_id] = producer
                     producer_type = producer["producerType"]
                     producer_label = PRODUCER_TYPE_NAMES.get(producer_type, producer_type)
@@ -424,6 +329,106 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                         via_device=(DOMAIN, appliance_id),
                     )
         return data
+
+    async def _async_update_consumption(self, appliance: dict, now: datetime) -> None:
+        """Refresh the daily, monthly and yearly consumption data of an appliance."""
+        appliance_id = appliance["applianceId"]
+        try:
+            consumption_data = (
+                await self.api.async_get_consumption_data_for_today(
+                    appliance_id
+                )
+            )
+            _LOGGER.debug(
+                "Requested consumption data for appliance %s: %s",
+                appliance_id,
+                consumption_data,
+            )
+
+            reported_today = [
+                row
+                for row in consumption_data["data"]
+                if row.get("isDataReported", True)
+            ]
+            if reported_today:
+                today_row = reported_today[-1]
+                if today_row.get("producerPerformanceStatistics", {}).get("producers"):
+                    for producer in today_row["producerPerformanceStatistics"]["producers"]:
+                        if producer["energyType"] == "NaturalGas":
+                            """Recalculate energy values back to gas values when Gas device"""
+
+                            producer["energyConsumptionCH"] = round(float(producer["energyConsumptionCH"]) / float(appliance["gasCalorificValue"]),2)
+                            producer["energyConsumptionDHW"] = round(float(producer["energyConsumptionDHW"]) / float(appliance["gasCalorificValue"]),2)
+
+
+                self.appliance_consumption_data[appliance_id] = today_row
+            else:
+                _LOGGER.warning(
+                    "No consumption data found for appliance %s", appliance_id
+                )
+                self.appliance_consumption_data[appliance_id] = dict(
+                    APPLIANCE_CONSUMPTION_DEFAULT_DATA
+                )
+
+            if (
+                "producerPerformanceStatistics"
+                in self.appliance_consumption_data[appliance_id]
+            ):
+                for producer in self.appliance_consumption_data[appliance_id][
+                    "producerPerformanceStatistics"
+                ]["producers"]:
+                    energy_type = _producer_energy_type(producer, appliance)
+                    if energy_type is None:
+                        continue
+                    for producer_stat in PRODUCER_STATS:
+                        stat = f"{producer_stat}{energy_type}"
+                        value = producer.get(producer_stat, 0.0)
+                        if not isinstance(value, int | float):
+                            value = 0.0
+
+                        self.appliance_consumption_data[appliance_id][stat] = (
+                            self.appliance_consumption_data[appliance_id].get(
+                                stat, 0.0
+                            )
+                            + value
+                        )
+
+                    self.appliance_consumption_data[appliance_id][
+                        f"seasonalEfficiency{energy_type}"
+                    ] = producer.get("seasonalEfficiency")
+
+            for (
+                period,
+                granularity,
+                start,
+                end,
+            ) in _consumption_periods(now):
+                period_data = await self.api.async_get_consumption_data(
+                    appliance_id, granularity, start, end
+                )
+                _LOGGER.debug(
+                    "Requested %s consumption data for appliance %s: %s",
+                    granularity,
+                    appliance_id,
+                    period_data,
+                )
+
+                reported = [
+                    row
+                    for row in period_data["data"]
+                    if row.get("isDataReported")
+                ]
+                self.appliance_period_consumption_data.setdefault(
+                    appliance_id, {}
+                )[period] = reported[-1] if reported else None
+
+            self.appliance_last_consumption_data_update[appliance_id] = now
+        except ClientResponseError as err:
+            _LOGGER.warning(
+                "Failed to request consumption data for appliance %s: %s",
+                appliance_id,
+                err,
+            )
 
     def get_by_id(self, item_id: str):
         """Return item with the specified item id."""
