@@ -9,6 +9,7 @@ import asyncio
 from aiohttp.client_exceptions import ClientResponseError
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -18,6 +19,8 @@ from .const import DOMAIN
 from .util import detect_dhw_setpoint_activity
 
 _LOGGER = logging.getLogger(__name__)
+
+TECHNICAL_INFO_INTERVAL = timedelta(hours=6)
 
 PRODUCER_TYPE_NAMES = {
     "HeatPumpAirSource": "Heat Pump (Air Source)",
@@ -144,6 +147,7 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
         self.items = {}
         self.device_info = {}
         self.technical_info = {}
+        self.technical_info_last_update = {}
         self.appliance_consumption_data = {}
         self.appliance_period_consumption_data = {}
         self.appliance_last_consumption_data_update = {}
@@ -178,18 +182,7 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
             appliance_id = appliance["applianceId"]
             self.items[appliance_id] = appliance
 
-            # Request appliance technical information the first time it is discovered
-            if appliance_id not in self.technical_info:
-                self.technical_info[appliance_id] = (
-                    await self.api.async_get_appliance_technical_information(
-                        appliance_id
-                    )
-                )
-                _LOGGER.debug(
-                    "Requested technical information for appliance %s: %s",
-                    appliance_id,
-                    self.technical_info[appliance_id],
-                )
+            await self._async_update_technical_info(appliance, now)
 
             # Only update appliance usage data every 15 minutes
             if (appliance_id not in self.appliance_last_consumption_data_update) or (
@@ -429,6 +422,58 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                 appliance_id,
                 err,
             )
+
+    async def _async_update_technical_info(self, appliance: dict, now: datetime) -> None:
+        """Refresh the appliance technical information every few hours.
+
+        It holds the gateway firmware version, which changes after an
+        over-the-air update, so it is re-read periodically instead of once.
+        """
+        appliance_id = appliance["applianceId"]
+        last_update = self.technical_info_last_update.get(appliance_id)
+        if last_update is not None and now - last_update < TECHNICAL_INFO_INTERVAL:
+            self._apply_gateway_info(appliance)
+            return
+
+        try:
+            self.technical_info[appliance_id] = (
+                await self.api.async_get_appliance_technical_information(appliance_id)
+            )
+        except ClientResponseError as err:
+            if appliance_id not in self.technical_info:
+                raise UpdateFailed from err
+            _LOGGER.warning(
+                "Failed to refresh technical information for appliance %s: %s",
+                appliance_id,
+                err,
+            )
+        else:
+            _LOGGER.debug(
+                "Requested technical information for appliance %s: %s",
+                appliance_id,
+                self.technical_info[appliance_id],
+            )
+        self.technical_info_last_update[appliance_id] = now
+        self._apply_gateway_info(appliance)
+
+    def _apply_gateway_info(self, appliance: dict) -> None:
+        """Expose the gateway firmware on the appliance and its zone devices."""
+        appliance_id = appliance["applianceId"]
+        gateways = self.technical_info[appliance_id].get("internetConnectedGateways") or []
+        sw_version = gateways[0].get("softwareVersion") if gateways else None
+        appliance["gatewaySoftwareVersion"] = sw_version
+        if sw_version is None:
+            return
+
+        # Climate zone devices carry the gateway version; keep the registry in
+        # sync so a firmware update shows up without reloading the integration.
+        registry = dr.async_get(self.hass)
+        for climate_zone in appliance.get("climateZones", []):
+            device = registry.async_get_device(
+                identifiers={(DOMAIN, climate_zone["climateZoneId"])}
+            )
+            if device and device.sw_version != sw_version:
+                registry.async_update_device(device.id, sw_version=sw_version)
 
     def get_by_id(self, item_id: str):
         """Return item with the specified item id."""

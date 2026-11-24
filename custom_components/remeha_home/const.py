@@ -240,6 +240,12 @@ APPLIANCE_SENSOR_TYPES = [
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     SensorEntityDescription(
+        key="gatewaySoftwareVersion",
+        name="Gateway Firmware",
+        icon="mdi:chip",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
         key="errorStatus",
         name="Error Status",
     ),
